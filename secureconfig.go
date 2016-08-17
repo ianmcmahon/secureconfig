@@ -4,7 +4,8 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	_ "crypto/sha256"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 )
@@ -43,18 +44,15 @@ func (sc *SecureConfig) SetSecureData(data interface{}) error {
 
 	fmt.Printf("marshalled data: %s\n", b)
 
-	hash := crypto.Hash(crypto.SHA256).New().Sum(b)
+	hashed := sha256.Sum256(b)
 
-	fmt.Printf("hash: %v\n", hash)
-
-	sig, err := rsa.SignPSS(rand.Reader, sc.Key, crypto.Hash(crypto.SHA256), hash, nil)
+	sig, err := rsa.SignPSS(rand.Reader, sc.Key, crypto.SHA256, hashed[:], nil)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("sig: %v\n", sig)
-
-	sc.Secure.Signature = []byte("foo")
+	sc.Secure.Signature = make([]byte, len(sig)*2)
+	hex.Encode(sc.Secure.Signature, sig)
 
 	return nil
 }
