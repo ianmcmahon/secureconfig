@@ -61,6 +61,10 @@ func LoadSecureConfig(signingKey *rsa.PublicKey, encryptionKey *rsa.PrivateKey, 
 		return nil, err
 	}
 
+	if sc.secureData.Private == nil && sc.secureData.Secure == nil {
+		return nil, fmt.Errorf("No secure data found")
+	}
+
 	return sc, nil
 }
 

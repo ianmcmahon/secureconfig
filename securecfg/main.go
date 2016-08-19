@@ -132,10 +132,25 @@ func signConfig(filename string, signingKey *rsa.PrivateKey) error {
 
 	var data interface{}
 
-	dec := json.NewDecoder(file)
-	if err := dec.Decode(&data); err != nil {
-		return err
+	scOrig, err := secureconfig.LoadSecureConfig(nil, nil, file)
+	if err != nil {
+		fmt.Printf("Couldn't load %s as an existing SecureConfig, importing anew\n")
+
+		if _, err := file.Seek(0, 0); err != nil {
+			return err
+		}
+
+		dec := json.NewDecoder(file)
+		if err := dec.Decode(&data); err != nil {
+			return err
+		}
+	} else {
+		fmt.Printf("loaded: %v\n", scOrig)
+		if _, err := scOrig.GetSecureData(data); err != nil {
+			return err
+		}
 	}
+
 	file.Close() // if we make it this far, we've closed the original file and the defer works for the reopening.
 
 	fmt.Printf("data: %v\n", data)
