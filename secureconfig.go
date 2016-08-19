@@ -18,8 +18,8 @@ type SecureConfig struct {
 }
 
 type secureData struct {
-	Secure  *secureTuple  `json:"secure"`
-	Private *privateTuple `json:"private"`
+	Secure  *secureTuple  `json:"secure,omitempty"`
+	Private *privateTuple `json:"private,omitempty"`
 }
 
 type secureTuple struct {
@@ -32,17 +32,25 @@ type privateTuple struct {
 	Signature     []byte `json:"signature"`
 }
 
+func wrapPublicKey(key *rsa.PublicKey) *rsa.PrivateKey {
+	if key == nil {
+		return nil
+	}
+
+	return &rsa.PrivateKey{PublicKey: *key}
+}
+
 func NewSecureConfig(signingKey *rsa.PrivateKey, encryptionKey *rsa.PublicKey) *SecureConfig {
 	return &SecureConfig{
 		signingKey:    signingKey,
-		encryptionKey: &rsa.PrivateKey{PublicKey: *encryptionKey},
+		encryptionKey: wrapPublicKey(encryptionKey),
 		secureData:    &secureData{},
 	}
 }
 
 func LoadSecureConfig(signingKey *rsa.PublicKey, encryptionKey *rsa.PrivateKey, source io.Reader) (*SecureConfig, error) {
 	sc := &SecureConfig{
-		signingKey:    &rsa.PrivateKey{PublicKey: *signingKey},
+		signingKey:    wrapPublicKey(signingKey),
 		encryptionKey: encryptionKey,
 		secureData:    &secureData{},
 	}
@@ -173,4 +181,17 @@ func (sc *SecureConfig) GetPrivateData(v interface{}) (signatureValid bool, err 
 func (sc *SecureConfig) Save(w io.Writer) error {
 	enc := json.NewEncoder(w)
 	return enc.Encode(sc.secureData)
+}
+
+func (sc *SecureConfig) SavePretty(w io.Writer) error {
+	b, err := json.MarshalIndent(sc.secureData, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if _, err = w.Write(b); err != nil {
+		return err
+	}
+
+	return nil
 }
