@@ -9,10 +9,13 @@ import (
 	"io/ioutil"
 	"os"
 	"os/user"
-	"path/filepath"
+//	"path/filepath"
 
 	"github.com/ianmcmahon/secureconfig"
 	"github.com/urfave/cli"
+	"syscall"
+	"strings"
+	"bufio"
 )
 
 // by default use the key in ~/.ssh/id_rsa for signing
@@ -86,41 +89,47 @@ func verifyAction(c *cli.Context) error {
 }
 
 func getKey(filename string) (*rsa.PrivateKey, error) {
-	filename, err := filepath.Abs(filename)
-	if err != nil {
-		return nil, err
-	}
+	//	filename, err := filepath.Abs(filename)
+	//	if err != nil {
+	//		return nil, err
+	//	}
 
-	b, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	for len(b) > 0 {
-		var block *pem.Block
-		block, b = pem.Decode(b)
-		if block == nil {
-			return nil, fmt.Errorf("no PEM blocks found")
-		}
-
-		if block.Type != "RSA PRIVATE KEY" {
-			continue
-		}
-
-		if x509.IsEncryptedPEMBlock(block) {
-			fmt.Printf("contains an encrypted key.  Will need your password to decrypt, but we haven't implemented that garbage yet.  Skipping!\n")
-		}
-
-		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+		b, err := ioutil.ReadFile(filename)
 		if err != nil {
-			fmt.Printf("error parsing PKCS1 key: %v\n", err)
-			continue
+			return nil, err
 		}
 
-		return key, nil
-	}
+		for len(b) > 0 {
+			var block *pem.Block
+			block, b = pem.Decode(b)
+			if block == nil {
+				return nil, fmt.Errorf("no PEM blocks found")
+			}
 
-	return nil, fmt.Errorf("No usable rsa key found")
+			if block.Type != "RSA PRIVATE KEY" {
+				continue
+			}
+
+			bytes := block.Bytes
+			if x509.IsEncryptedPEMBlock(block) {
+				passphrase := getPassword("Enter Passhprase:")
+				bytes, err = x509.DecryptPEMBlock(block, []byte(passphrase))
+				if err != nil {
+					return nil, err
+				}
+			}
+			
+			
+			key, err := x509.ParsePKCS1PrivateKey(bytes)
+			if err != nil {
+				fmt.Printf("error parsing PKCS1 key: %v\n", err)
+				continue
+			}
+
+			return key, nil
+		}
+
+		return nil, fmt.Errorf("No usable rsa key found")
 }
 
 func signConfig(filename string, signingKey *rsa.PrivateKey) error {
@@ -168,3 +177,58 @@ func signConfig(filename string, signingKey *rsa.PrivateKey) error {
 
 	return sc.SavePretty(file)
 }
+
+
+
+// getPassword - Prompt for password. Use stty to disable echoing.
+func getPassword(prompt string) string {
+	fmt.Print(prompt)
+
+	// Common settings and variables for both stty calls.
+	attrs := syscall.ProcAttr{
+		Dir:   "",
+		Env:   []string{},
+		Files: []uintptr{os.Stdin.Fd(), os.Stdout.Fd(), os.Stderr.Fd()},
+		Sys:   nil}
+	var ws syscall.WaitStatus
+
+	// Disable echoing.
+	pid, err := syscall.ForkExec(
+		"/bin/stty",
+		[]string{"stty", "-echo"},
+		&attrs)
+	if err != nil {
+		panic(err)
+	}
+
+	// Wait for the stty process to complete.
+	_, err = syscall.Wait4(pid, &ws, 0, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	// Echo is disabled, now grab the data.
+	reader := bufio.NewReader(os.Stdin)
+	text, err := reader.ReadString('\n')
+	if err != nil {
+		panic(err)
+	}
+
+	// Re-enable echo.
+	pid, err = syscall.ForkExec(
+		"/bin/stty",
+		[]string{"stty", "echo"},
+		&attrs)
+	if err != nil {
+		panic(err)
+	}
+
+	// Wait for the stty process to complete.
+	_, err = syscall.Wait4(pid, &ws, 0, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	return strings.TrimSpace(text)
+}
+
